@@ -15,53 +15,69 @@ export const useWebRTC = (roomId) => {
     
     const peerRef = useRef(null);
     const connRef = useRef(null);
-    const hostPeerRef = useRef(null);
     const currentFileMeta = useRef(null);
 
     useEffect(() => {
         if (!roomId) return;
 
-        // Strategy: 
-        // 1. Try to join as a client and connect to the roomId (host)
-        // 2. Also try to become the HOST for this roomId
-        
-        const clientPeer = new Peer(null, {
-            debug: 1,
-            config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
-        });
+        setConnectionStatus('connecting');
 
-        clientPeer.on('open', (id) => {
-            console.log('Client Peer ID:', id);
-            const conn = clientPeer.connect(roomId, { reliable: true });
-            setupConnection(conn);
-        });
+        let peerInstance = null;
 
-        const hostPeer = new Peer(roomId, {
-            debug: 1,
-            config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
-        });
+        const initializePeer = (isHost) => {
+            const id = isHost ? roomId : null;
+            const peer = new Peer(id, {
+                debug: 1,
+                config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+            });
 
-        hostPeer.on('connection', (conn) => {
-            console.log('Incoming connection to HOST');
-            setupConnection(conn);
-        });
+            peer.on('open', (id) => {
+                console.log('Peer opened with ID:', id);
+                if (!isHost) {
+                    // We are a client, attempt to connect to the host (roomId)
+                    const conn = peer.connect(roomId, { reliable: true });
+                    setupConnection(conn);
+                }
+            });
 
-        peerRef.current = clientPeer;
-        hostPeerRef.current = hostPeer;
+            peer.on('connection', (conn) => {
+                console.log('Incoming connection received');
+                setupConnection(conn);
+            });
+
+            peer.on('error', (err) => {
+                if (isHost && err.type === 'unavailable-id') {
+                    console.log('Room ID taken, initializing as client...');
+                    peer.destroy();
+                    initializePeer(false); // Try again as a client
+                } else {
+                    console.error('Peer error:', err);
+                    setConnectionStatus('disconnected');
+                }
+            });
+
+            peerInstance = peer;
+            peerRef.current = peer;
+        };
+
+        // Start by trying to be the host
+        initializePeer(true);
 
         return () => {
             if (connRef.current) connRef.current.close();
-            if (peerRef.current) peerRef.current.destroy();
-            if (hostPeerRef.current) hostPeerRef.current.destroy();
+            if (peerInstance) peerInstance.destroy();
         };
     }, [roomId]);
 
     const setupConnection = (conn) => {
+        // Important: Close existing connection if any
+        if (connRef.current) connRef.current.close();
+
         conn.on('open', () => {
             connRef.current = conn;
             setConnectionStatus('connected');
             setConnectedUser(conn.peer);
-            console.log("Connected to peer!");
+            console.log("Connected to peer:", conn.peer);
         });
 
         conn.on('data', (data) => {
@@ -71,11 +87,16 @@ export const useWebRTC = (roomId) => {
         conn.on('close', () => {
             setConnectionStatus('disconnected');
         });
+
+        conn.on('error', (err) => {
+            console.error("Connection error:", err);
+        });
     };
 
     const sendFile = (file) => {
-        if (!connRef.current) return;
+        if (!connRef.current || !file) return;
 
+        console.log("Sending metadata for:", file.name);
         // Send metadata
         connRef.current.send({
             type: 'metadata',
@@ -84,11 +105,13 @@ export const useWebRTC = (roomId) => {
             fileType: file.type
         });
 
-        // Send file
-        connRef.current.send(file);
-        
-        updateProgress(100);
-        setTimeout(() => updateProgress(0), 1000);
+        // Small delay to ensure metadata is processed
+        setTimeout(() => {
+            console.log("Sending file data...");
+            connRef.current.send(file);
+            updateProgress(100);
+            setTimeout(() => updateProgress(0), 1500);
+        }, 100);
     };
 
     const handleIncomingData = (data) => {

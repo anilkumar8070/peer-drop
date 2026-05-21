@@ -96,24 +96,40 @@ export default function Room() {
                         <motion.div 
                             onDragOver={(e) => e.preventDefault()}
                             onDrop={onFileDrop}
-                            whileHover={{ borderColor: 'rgba(59, 130, 246, 0.5)' }}
-                            className="relative group border-2 border-dashed border-white/10 rounded-[2rem] p-12 flex flex-col items-center justify-center bg-white/[0.02] min-h-[350px] transition-all"
+                            whileHover={{ borderColor: connectionStatus === 'connected' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(239, 68, 68, 0.2)' }}
+                            className={`relative group border-2 border-dashed rounded-[2rem] p-12 flex flex-col items-center justify-center min-h-[350px] transition-all ${
+                                connectionStatus === 'connected' 
+                                ? 'border-white/10 bg-white/[0.02]' 
+                                : 'border-red-500/20 bg-red-500/[0.02]'
+                            }`}
                         >
                             <input 
                                 type="file" 
-                                className="absolute inset-0 opacity-0 cursor-pointer" 
-                                onChange={(e) => sendFile(e.target.files[0])}
+                                className={`absolute inset-0 opacity-0 ${connectionStatus === 'connected' ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                                onChange={(e) => e.target.files[0] && sendFile(e.target.files[0])}
                                 disabled={connectionStatus !== 'connected'}
                             />
                             
-                            <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                                <FiShare2 className="text-3xl text-blue-400" />
+                            <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 transition-transform ${
+                                connectionStatus === 'connected' 
+                                ? 'bg-blue-500/10 group-hover:scale-110' 
+                                : 'bg-red-500/10'
+                            }`}>
+                                <FiShare2 className={`text-3xl ${connectionStatus === 'connected' ? 'text-blue-400' : 'text-red-400'}`} />
                             </div>
                             
                             <h3 className="text-2xl font-bold mb-2">
-                                {connectionStatus === 'connected' ? 'Drop file to send' : 'Connect a device first'}
+                                {connectionStatus === 'connected' 
+                                    ? 'Drop file to send' 
+                                    : connectionStatus === 'connecting' 
+                                        ? 'Attempting to link devices...' 
+                                        : 'Connection lost. Please refresh.'}
                             </h3>
-                            <p className="text-gray-500">Any file size. Encrypted. Direct.</p>
+                            <p className="text-gray-500">
+                                {connectionStatus === 'connected' 
+                                    ? 'Any file size. Encrypted. Direct.' 
+                                    : 'Make sure the other person has the same room open.'}
+                            </p>
 
                             {/* Progress Overlay */}
                             <AnimatePresence>
