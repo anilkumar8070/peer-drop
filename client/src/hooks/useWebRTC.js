@@ -34,9 +34,15 @@ export const useWebRTC = (roomId) => {
             peer.on('open', (id) => {
                 console.log('Peer opened with ID:', id);
                 if (!isHost) {
-                    // We are a client, attempt to connect to the host (roomId)
-                    const conn = peer.connect(roomId, { reliable: true });
-                    setupConnection(conn);
+                    // Small delay to ensure host peer is ready
+                    setTimeout(() => {
+                        console.log('Attempting to connect to host:', roomId);
+                        const conn = peer.connect(roomId, { 
+                            reliable: true,
+                            metadata: { id: peer.id }
+                        });
+                        setupConnection(conn);
+                    }, 500);
                 }
             });
 
@@ -46,12 +52,18 @@ export const useWebRTC = (roomId) => {
             });
 
             peer.on('error', (err) => {
-                if (isHost && err.type === 'unavailable-id') {
-                    console.log('Room ID taken, initializing as client...');
+                if (isHost && (err.type === 'unavailable-id' || err.type === 'id-taken')) {
+                    console.log('Room ID taken or unavailable, initializing as client...');
                     peer.destroy();
-                    initializePeer(false); // Try again as a client
+                    initializePeer(false);
+                } else if (!isHost && err.type === 'peer-unavailable') {
+                    console.log('Host not ready yet, retrying connection...');
+                    setTimeout(() => {
+                        const conn = peer.connect(roomId, { reliable: true });
+                        setupConnection(conn);
+                    }, 2000);
                 } else {
-                    console.error('Peer error:', err);
+                    console.error('Peer error:', err.type, err);
                     setConnectionStatus('disconnected');
                 }
             });
