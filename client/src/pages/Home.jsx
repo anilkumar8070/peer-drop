@@ -1,14 +1,15 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FiZap, FiShield, FiCpu, FiArrowRight, FiDownload, FiCamera, FiX } from 'react-icons/fi';
-import { Scanner } from '@zxing/library';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export default function Home() {
     const navigate = useNavigate();
     const [showJoinModal, setShowJoinModal] = useState(false);
     const [roomCode, setRoomCode] = useState('');
     const [showScanner, setShowScanner] = useState(false);
+    const scannerRef = useRef(null);
 
     const startSharing = () => {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -16,19 +17,40 @@ export default function Home() {
     };
 
     const handleJoin = (e) => {
-        e.preventDefault();
+        if (e) e.preventDefault();
         if (roomCode.trim()) {
             navigate(`/room/${roomCode.toUpperCase()}`);
         }
     };
 
-    const handleScan = (result) => {
-        if (result) {
-            // Check if result is a full URL or just a code
-            const code = result.includes('/room/') ? result.split('/room/')[1] : result;
-            navigate(`/room/${code.toUpperCase()}`);
+    useEffect(() => {
+        if (showScanner && showJoinModal) {
+            const scanner = new Html5QrcodeScanner("reader", { 
+                fps: 10, 
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.0
+            });
+
+            scanner.render((decodedText) => {
+                // Success callback
+                const code = decodedText.includes('/room/') ? decodedText.split('/room/')[1] : decodedText;
+                setRoomCode(code.toUpperCase());
+                setShowScanner(false);
+                scanner.clear();
+                navigate(`/room/${code.toUpperCase()}`);
+            }, (error) => {
+                // Error callback (usually just noise)
+            });
+
+            scannerRef.current = scanner;
         }
-    };
+
+        return () => {
+            if (scannerRef.current) {
+                scannerRef.current.clear().catch(err => console.error("Failed to clear scanner", err));
+            }
+        };
+    }, [showScanner, showJoinModal, navigate]);
 
     return (
         <div className="min-h-screen bg-[#050505] text-white selection:bg-blue-500/30">
@@ -161,12 +183,8 @@ export default function Home() {
                                     </button>
 
                                     {showScanner && (
-                                        <div className="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-black aspect-square flex items-center justify-center relative">
-                                             <p className="text-xs text-gray-500 absolute bottom-4">Point your camera at the QR code</p>
-                                             {/* In a real app, you'd use a barcode scanner component here */}
-                                             <div className="w-full h-full bg-blue-500/5 animate-pulse flex items-center justify-center">
-                                                <FiCamera size={48} className="text-blue-500/20" />
-                                             </div>
+                                        <div className="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-black aspect-square relative">
+                                             <div id="reader" className="w-full h-full"></div>
                                         </div>
                                     )}
                                 </form>
