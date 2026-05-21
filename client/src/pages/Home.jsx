@@ -209,15 +209,3 @@ function FeatureCard({ icon, title, desc }) {
         </div>
     );
 }
-
-function FeatureCard({ icon, title, desc }) {
-    return (
-        <div className="p-8 rounded-3xl bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.06] transition-colors text-left group">
-            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 text-2xl mb-6 group-hover:scale-110 transition-transform">
-                {icon}
-            </div>
-            <h3 className="text-xl font-bold mb-3">{title}</h3>
-            <p className="text-gray-500 leading-relaxed">{desc}</p>
-        </div>
-    );
-}
