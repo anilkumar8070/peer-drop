@@ -1,14 +1,33 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { FiZap, FiShield, FiCpu, FiArrowRight } from 'react-icons/fi';
+import { useState } from 'react';
+import { FiZap, FiShield, FiCpu, FiArrowRight, FiDownload, FiCamera, FiX } from 'react-icons/fi';
+import { Scanner } from '@zxing/library';
 
 export default function Home() {
     const navigate = useNavigate();
+    const [showJoinModal, setShowJoinModal] = useState(false);
+    const [roomCode, setRoomCode] = useState('');
+    const [showScanner, setShowScanner] = useState(false);
 
     const startSharing = () => {
-        // Generate a 6-digit random room code
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         navigate(`/room/${code}`);
+    };
+
+    const handleJoin = (e) => {
+        e.preventDefault();
+        if (roomCode.trim()) {
+            navigate(`/room/${roomCode.toUpperCase()}`);
+        }
+    };
+
+    const handleScan = (result) => {
+        if (result) {
+            // Check if result is a full URL or just a code
+            const code = result.includes('/room/') ? result.split('/room/')[1] : result;
+            navigate(`/room/${code.toUpperCase()}`);
+        }
     };
 
     return (
@@ -24,9 +43,14 @@ export default function Home() {
                 <div className="text-2xl font-bold tracking-tighter bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
                     PEERDROP
                 </div>
-                <button className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
-                    How it works
-                </button>
+                <div className="flex gap-6">
+                    <button 
+                        onClick={() => setShowJoinModal(true)}
+                        className="text-sm font-medium text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+                    >
+                        <FiDownload /> Receive
+                    </button>
+                </div>
             </nav>
 
             {/* Hero Section */}
@@ -48,17 +72,108 @@ export default function Home() {
                         No servers, no storage, no limits. Just your data, moving fast.
                     </p>
 
-                    <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={startSharing}
-                        className="group relative px-8 py-4 bg-white text-black rounded-full font-bold text-lg overflow-hidden transition-all hover:shadow-[0_0_40px_8px_rgba(255,255,255,0.2)]"
-                    >
-                        <span className="relative z-10 flex items-center gap-2">
-                            Start Sharing <FiArrowRight className="group-hover:translate-x-1 transition-transform" />
-                        </span>
-                    </motion.button>
+                    <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={startSharing}
+                            className="group relative px-8 py-4 bg-white text-black rounded-full font-bold text-lg overflow-hidden transition-all hover:shadow-[0_0_40px_8px_rgba(255,255,255,0.2)]"
+                        >
+                            <span className="relative z-10 flex items-center gap-2">
+                                Start Sharing <FiArrowRight className="group-hover:translate-x-1 transition-transform" />
+                            </span>
+                        </motion.button>
+
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => setShowJoinModal(true)}
+                            className="group relative px-8 py-4 bg-white/5 border border-white/10 text-white rounded-full font-bold text-lg overflow-hidden transition-all hover:bg-white/10"
+                        >
+                            <span className="relative z-10 flex items-center gap-2">
+                                Receive Files <FiDownload className="group-hover:translate-y-1 transition-transform" />
+                            </span>
+                        </motion.button>
+                    </div>
                 </motion.div>
+
+                {/* Join Modal */}
+                <AnimatePresence>
+                    {showJoinModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+                            <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowJoinModal(false)}
+                                className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+                            />
+                            <motion.div 
+                                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                                animate={{ scale: 1, opacity: 1, y: 0 }}
+                                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                                className="relative bg-[#0f0f0f] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl"
+                            >
+                                <button 
+                                    onClick={() => setShowJoinModal(false)}
+                                    className="absolute top-4 right-4 p-2 text-gray-500 hover:text-white"
+                                >
+                                    <FiX size={24} />
+                                </button>
+
+                                <h2 className="text-2xl font-bold mb-6">Receive Files</h2>
+                                
+                                <form onSubmit={handleJoin} className="space-y-6">
+                                    <div>
+                                        <label className="block text-sm text-gray-500 mb-2 ml-1">Enter Room Code</label>
+                                        <input 
+                                            type="text" 
+                                            value={roomCode}
+                                            onChange={(e) => setRoomCode(e.target.value)}
+                                            placeholder="E.G. X7A2B9"
+                                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-xl font-mono tracking-widest focus:outline-none focus:border-blue-500/50 transition-colors uppercase"
+                                            maxLength={8}
+                                        />
+                                    </div>
+                                    
+                                    <button 
+                                        type="submit"
+                                        className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-colors"
+                                    >
+                                        Join Room
+                                    </button>
+
+                                    <div className="relative">
+                                        <div className="absolute inset-0 flex items-center">
+                                            <div className="w-full border-t border-white/5"></div>
+                                        </div>
+                                        <div className="relative flex justify-center text-xs uppercase">
+                                            <span className="bg-[#0f0f0f] px-2 text-gray-500">Or Scan QR Code</span>
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowScanner(!showScanner)}
+                                        className="w-full py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold border border-white/10 transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        <FiCamera /> {showScanner ? "Close Scanner" : "Open Camera Scanner"}
+                                    </button>
+
+                                    {showScanner && (
+                                        <div className="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-black aspect-square flex items-center justify-center relative">
+                                             <p className="text-xs text-gray-500 absolute bottom-4">Point your camera at the QR code</p>
+                                             {/* In a real app, you'd use a barcode scanner component here */}
+                                             <div className="w-full h-full bg-blue-500/5 animate-pulse flex items-center justify-center">
+                                                <FiCamera size={48} className="text-blue-500/20" />
+                                             </div>
+                                        </div>
+                                    )}
+                                </form>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
 
                 {/* Features Grid */}
                 <div className="grid md:grid-cols-3 gap-6 max-w-6xl mt-32 w-full">
@@ -79,6 +194,18 @@ export default function Home() {
                     />
                 </div>
             </main>
+        </div>
+    );
+}
+
+function FeatureCard({ icon, title, desc }) {
+    return (
+        <div className="p-8 rounded-3xl bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.06] transition-colors text-left group">
+            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 text-2xl mb-6 group-hover:scale-110 transition-transform">
+                {icon}
+            </div>
+            <h3 className="text-xl font-bold mb-3">{title}</h3>
+            <p className="text-gray-500 leading-relaxed">{desc}</p>
         </div>
     );
 }
