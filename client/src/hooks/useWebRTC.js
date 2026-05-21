@@ -1,11 +1,6 @@
 import { useEffect, useRef } from 'react';
-import io from 'socket.io-client';
-import Peer from 'simple-peer';
+import Peer from 'peerjs';
 import { usePeerStore } from '../store/usePeerStore';
-
-// Use environment variable for production, fallback to localhost for development
-const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-const socket = io(SOCKET_URL);
 
 // WebRTC chunk size (64KB is optimal for most browsers)
 const CHUNK_SIZE = 16384 * 4; 
@@ -19,140 +14,99 @@ export const useWebRTC = (roomId) => {
     } = usePeerStore();
     
     const peerRef = useRef(null);
-    const receiverBuffer = useRef([]);
+    const connRef = useRef(null);
+    const hostPeerRef = useRef(null);
     const currentFileMeta = useRef(null);
 
     useEffect(() => {
         if (!roomId) return;
 
-        // 1. Join the socket room
-        socket.emit('join-room', roomId);
-
-        // 2. Listen for other users
-        socket.on('user-joined', (userId) => {
-            console.log("User joined, initiating offer...");
-            initiatePeer(userId, true); // We are the initiator (sender)
-        });
-
-        socket.on('signal', ({ senderId, signal }) => {
-            console.log("Received signal from peer");
-            if (!peerRef.current) {
-                initiatePeer(senderId, false); // We are the receiver
-            }
-            peerRef.current.signal(signal);
-        });
-
-        return () => {
-            socket.off('user-joined');
-            socket.off('signal');
-            if (peerRef.current) peerRef.current.destroy();
-        };
-    }, [roomId]);
-
-    const initiatePeer = (targetId, isInitiator) => {
-        const peer = new Peer({
-            initiator: isInitiator,
-            trickle: false,
-            // Configuration for NAT traversal (STUN servers)
+        // Strategy: 
+        // 1. Try to join as a client and connect to the roomId (host)
+        // 2. Also try to become the HOST for this roomId
+        
+        const clientPeer = new Peer(null, {
+            debug: 1,
             config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
         });
 
-        peer.on('signal', (data) => {
-            socket.emit('signal', { targetId, signal: data });
+        clientPeer.on('open', (id) => {
+            console.log('Client Peer ID:', id);
+            const conn = clientPeer.connect(roomId, { reliable: true });
+            setupConnection(conn);
         });
 
-        peer.on('connect', () => {
+        const hostPeer = new Peer(roomId, {
+            debug: 1,
+            config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+        });
+
+        hostPeer.on('connection', (conn) => {
+            console.log('Incoming connection to HOST');
+            setupConnection(conn);
+        });
+
+        peerRef.current = clientPeer;
+        hostPeerRef.current = hostPeer;
+
+        return () => {
+            if (connRef.current) connRef.current.close();
+            if (peerRef.current) peerRef.current.destroy();
+            if (hostPeerRef.current) hostPeerRef.current.destroy();
+        };
+    }, [roomId]);
+
+    const setupConnection = (conn) => {
+        conn.on('open', () => {
+            connRef.current = conn;
             setConnectionStatus('connected');
-            setConnectedUser(targetId);
-            console.log("P2P Connected!");
+            setConnectedUser(conn.peer);
+            console.log("Connected to peer!");
         });
 
-        // 3. Handle Incoming Data (Files or Metadata)
-        peer.on('data', (data) => {
+        conn.on('data', (data) => {
             handleIncomingData(data);
         });
 
-        peer.on('close', () => {
+        conn.on('close', () => {
             setConnectionStatus('disconnected');
         });
-
-        peerRef.current = peer;
     };
 
-    // --- FILE SENDING LOGIC ---
     const sendFile = (file) => {
-        if (!peerRef.current) return;
+        if (!connRef.current) return;
 
-        // First, send file metadata as a JSON string
-        const meta = {
+        // Send metadata
+        connRef.current.send({
             type: 'metadata',
             name: file.name,
             size: file.size,
             fileType: file.type
-        };
-        peerRef.current.send(JSON.stringify(meta));
+        });
 
-        // Start reading and sending file in chunks
-        const reader = new FileReader();
-        let offset = 0;
-
-        reader.onload = (e) => {
-            peerRef.current.send(e.target.result);
-            offset += e.target.result.byteLength;
-            
-            const progress = Math.round((offset / file.size) * 100);
-            updateProgress(progress);
-
-            if (offset < file.size) {
-                readNextChunk();
-            } else {
-                console.log("File sent successfully");
-                updateProgress(0); // Reset progress
-            }
-        };
-
-        const readNextChunk = () => {
-            const slice = file.slice(offset, offset + CHUNK_SIZE);
-            reader.readAsArrayBuffer(slice);
-        };
-
-        readNextChunk();
+        // Send file
+        connRef.current.send(file);
+        
+        updateProgress(100);
+        setTimeout(() => updateProgress(0), 1000);
     };
 
-    // --- FILE RECEIVING LOGIC ---
     const handleIncomingData = (data) => {
-        try {
-            // Check if data is metadata (JSON string)
-            const message = JSON.parse(data.toString());
-            if (message.type === 'metadata') {
-                currentFileMeta.current = message;
-                receiverBuffer.current = []; // Clear buffer for new file
-                return;
-            }
-        } catch (e) {
-            // If not JSON, it's a binary file chunk
-            receiverBuffer.current.push(data);
-            
-            // Calculate progress
-            const receivedSize = receiverBuffer.current.reduce((acc, curr) => acc + curr.byteLength, 0);
-            const progress = Math.round((receivedSize / currentFileMeta.current.size) * 100);
-            updateProgress(progress);
+        if (data && data.type === 'metadata') {
+            currentFileMeta.current = data;
+            return;
+        }
 
-            // If all chunks received
-            if (receivedSize === currentFileMeta.current.size) {
-                const blob = new Blob(receiverBuffer.current, { type: currentFileMeta.current.fileType });
-                const url = URL.createObjectURL(blob);
-                
-                // Add to store so UI can show download button
-                addFile({
-                    ...currentFileMeta.current,
-                    url: url,
-                    date: new Date().toLocaleTimeString()
-                });
-                
-                updateProgress(0);
-                receiverBuffer.current = [];
-            }
+        if (data instanceof Blob || data instanceof ArrayBuffer) {
+            const blob = data instanceof Blob ? data : new Blob([data]);
+            const url = URL.createObjectURL(blob);
+            
+            addFile({
+                ...currentFileMeta.current,
+                url: url,
+                date: new Date().toLocaleTimeString()
+            });
+            updateProgress(0);
         }
     };
 
