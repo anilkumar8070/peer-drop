@@ -3,8 +3,9 @@ import io from 'socket.io-client';
 import Peer from 'simple-peer';
 import { usePeerStore } from '../store/usePeerStore';
 
-// Change this to your backend URL in production
-const socket = io('http://localhost:5000');
+// Use environment variable for production, fallback to localhost for development
+const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const socket = io(SOCKET_URL);
 
 // WebRTC chunk size (64KB is optimal for most browsers)
 const CHUNK_SIZE = 16384 * 4; 
